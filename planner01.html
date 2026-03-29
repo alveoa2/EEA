@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+  <meta name="apple-mobile-web-app-title" content="quests"/>
+  <title>quests</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    html,body,#root{height:100%;overflow:hidden;}
+    input::placeholder{color:#ccc4b4;}
+    input:focus,textarea:focus{outline:none;}
+    ::-webkit-scrollbar{width:3px;height:3px;}
+    ::-webkit-scrollbar-thumb{background:#ddd6c8;}
+    button{font-family:'Azeret Mono','Courier New',monospace;cursor:pointer;}
+    body{font-family:'Azeret Mono','Courier New',monospace;background:#faf7f2;color:#1e1a14;}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const STORAGE_KEY = "planner-v7";
+const p = {
+  parchment:"#faf7f2", parchment2:"#f2ede4", parchment3:"#e8e0d4",
+  ink:"#1e1a14", inkDim:"#7a7060", inkGhost:"#b8ae9e", inkFaint:"#ccc4b4",
+  border:"#ddd6c4", borderDim:"#e8e2d8",
+  urgent:"#8b3a2a", urgentBg:"#f5ede8", done:"#a09888",
+  orange:"#c47a2a", red:"#a02a2a", violet:"#6b3a8b",
+};
+
+const DAYS_SHORT=["sun","mon","tue","wed","thu","fri","sat"];
+const DAYS_FULL=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+const MONTHS=["january","february","march","april","may","june","july","august","september","october","november","december"];
+
+function getToday(){const d=new Date();d.setHours(0,0,0,0);return d;}
+function addDays(d,n){const r=new Date(d);r.setDate(d.getDate()+n);return r;}
+function sameDay(a,b){return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();}
+function startOfWeek(d){const r=new Date(d);r.setDate(d.getDate()-d.getDay());r.setHours(0,0,0,0);return r;}
+function getWeekDays(d){const s=startOfWeek(d);return Array.from({length:7},(_,i)=>addDays(s,i));}
+function getMonthGrid(d){
+  const first=new Date(d.getFullYear(),d.getMonth(),1);
+  const last=new Date(d.getFullYear(),d.getMonth()+1,0);
+  const cells=[];
+  for(let i=0;i<first.getDay();i++)cells.push(null);
+  for(let i=1;i<=last.getDate();i++)cells.push(new Date(d.getFullYear(),d.getMonth(),i));
+  while(cells.length%7!==0)cells.push(null);
+  return cells;
+}
+function countColor(n){if(n<6)return p.ink;if(n<8)return p.orange;if(n<10)return p.red;return p.violet;}
+function parseInput(raw){
+  let s=raw.trim().toLowerCase();
+  let date=null,time=null,priority="normal";
+  if(/\burgent\b/.test(s)){priority="urgent";s=s.replace(/\burgent\b/,"").trim();}
+  const tRx=/\b(\d{1,2})[h:](\d{2})\b|\b(\d{1,2})\s?(am|pm)\b/i;
+  const tM=s.match(tRx);
+  if(tM){
+    if(tM[4]){let hr=parseInt(tM[3]);if(tM[4].toLowerCase()==="pm"&&hr<12)hr+=12;if(tM[4].toLowerCase()==="am"&&hr===12)hr=0;time=`${String(hr).padStart(2,"0")}:00`;}
+    else{time=`${String(parseInt(tM[1])).padStart(2,"0")}:${tM[2]}`;}
+    s=s.replace(tM[0],"").trim();
+  }
+  if(/\btoday\b/.test(s)){date=getToday();s=s.replace(/\btoday\b/,"").trim();}
+  else if(/\btomorrow\b/.test(s)){date=addDays(getToday(),1);s=s.replace(/\btomorrow\b/,"").trim();}
+  else{
+    let found=false;
+    for(let wi=0;wi<7;wi++){
+      const rx=new RegExp(`\\b(${DAYS_FULL[wi]}|${DAYS_SHORT[wi]})\\b`);
+      if(rx.test(s)){const cur=getToday().getDay();let diff=wi-cur;if(diff<=0)diff+=7;date=addDays(getToday(),diff);s=s.replace(rx,"").trim();found=true;break;}
+    }
+    if(!found){
+      const dRx=/\b(\d{1,2})[\/\-\.](\d{1,2})(?:[\/\-\.](\d{2,4}))?\b/;
+      const dM=s.match(dRx);
+      if(dM){
+        const dd=parseInt(dM[1]),mm=parseInt(dM[2])-1;
+        const yr=dM[3]?parseInt(dM[3].length===2?"20"+dM[3]:dM[3]):getToday().getFullYear();
+        const attempt=new Date(yr,mm,dd);
+        if(!isNaN(attempt.getTime())){if(!dM[3]&&attempt<getToday())attempt.setFullYear(yr+1);date=attempt;}
+        s=s.replace(dRx,"").trim();
+      }
+    }
+  }
+  s=s.replace(/^[\s,\-]+|[\s,\-]+$/g,"");
+  return{text:s||raw.trim().toLowerCase(),date,time,priority};
+}
+
+const btnSm={background:"transparent",border:`1px solid ${p.borderDim}`,color:p.inkGhost,fontSize:"9px",cursor:"pointer",padding:"2px 5px",lineHeight:1.6,fontFamily:"inherit",letterSpacing:"0.04em"};
+
+// compact=true → month/week pill, no wrapping, no buttons
+// compact=false → full card with actions
+function TaskChip({task,onToggle,onDelete,onSchedule,compact=false,draggable=false,onDragStart,onDragOver,onDrop,isDragOver}){
+  const [hover,setHover]=React.useState(false);
+  const [scheduling,setScheduling]=React.useState(false);
+  const [dateInput,setDateInput]=React.useState("");
+  const dateRef=React.useRef(null);
+  React.useEffect(()=>{if(scheduling)dateRef.current?.focus();},[scheduling]);
+
+  function commitSchedule(){
+    const raw=dateInput.trim();if(!raw){setScheduling(false);return;}
+    const{date}=parseInput("x "+raw);
+    if(date){onSchedule(task.id,date);setScheduling(false);setDateInput("");}
+    else dateRef.current?.select();
+  }
+  const isPrep=task.isPrep;
+
+  // ── compact pill (month + week view) ──────────────────
+  if(compact){
+    return(
+      <div
+        draggable={draggable}
+        onDragStart={onDragStart}
+        onDragOver={e=>{e.preventDefault();onDragOver&&onDragOver();}}
+        onDrop={onDrop}
+        style={{
+          display:"flex", alignItems:"center",
+          padding:"2px 5px",
+          background:task.done?"transparent":isPrep?"transparent":task.priority==="urgent"?p.urgentBg:p.parchment2,
+          border:`1px solid ${task.done?p.borderDim:isPrep?p.borderDim:task.priority==="urgent"?"#d4b0a0":p.borderDim}`,
+          borderLeft:task.priority==="urgent"&&!task.done&&!isPrep?"2px solid #c8a090":undefined,
+          borderStyle:isPrep?"dashed":"solid",
+          opacity:task.done?0.4:1,
+          overflow:"hidden",
+          cursor:draggable?"grab":"default",
+          outline:isDragOver?`1px solid ${p.inkGhost}`:"none",
+          minWidth:0,
+        }}
+      >
+        <span style={{
+          fontSize:"9px",
+          color:task.done?p.done:isPrep?p.inkGhost:p.ink,
+          textDecoration:task.done?"line-through":"none",
+          fontStyle:isPrep?"italic":"normal",
+          whiteSpace:"nowrap",
+          overflow:"hidden",
+          textOverflow:"ellipsis",
+          letterSpacing:"0.01em",
+          lineHeight:1.5,
+          display:"block",
+          width:"100%",
+        }}>
+          {task.text}
+        </span>
+      </div>
+    );
+  }
+
+  // ── full card (day view + backlog) ────────────────────
+  return(
+    <div
+      onMouseEnter={()=>setHover(true)}
+      onMouseLeave={()=>setHover(false)}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={e=>{e.preventDefault();onDragOver&&onDragOver();}}
+      onDrop={onDrop}
+      style={{
+        padding:"7px 10px",
+        background:task.done?p.parchment2:isPrep?"transparent":task.priority==="urgent"?p.urgentBg:p.parchment,
+        border:`1px solid ${task.done?p.borderDim:isPrep?p.borderDim:task.priority==="urgent"?"#d4b0a0":p.borderDim}`,
+        borderLeft:task.priority==="urgent"&&!task.done&&!isPrep?"2px solid #c8a090":undefined,
+        borderStyle:isPrep?"dashed":"solid",
+        opacity:task.done?0.4:1,transition:"opacity 0.1s",
+        cursor:draggable?"grab":"default",
+        outline:isDragOver?`1px solid ${p.inkGhost}`:"none",
+      }}
+    >
+      <div style={{display:"flex",alignItems:"flex-start",gap:"5px"}}>
+        <span style={{flex:1,fontSize:"11px",color:task.done?p.done:isPrep?p.inkGhost:p.ink,textDecoration:task.done?"line-through":"none",fontStyle:isPrep?"italic":"normal",letterSpacing:"0.01em",lineHeight:1.45,wordBreak:"break-word"}}>
+          {task.time&&<span style={{color:p.inkGhost,marginRight:"5px",fontSize:"10px"}}>{task.time}</span>}
+          {task.text}
+        </span>
+        {/* desktop hover actions */}
+        {hover&&(
+          <div className="hover-actions" style={{display:"flex",gap:"3px",flexShrink:0,paddingTop:"1px"}}>
+            {!task.date&&!task.done&&<button onClick={()=>setScheduling(s=>!s)} style={btnSm}>→</button>}
+            <button onClick={()=>onToggle(task.id)} style={btnSm}>{task.done?"↺":"✓"}</button>
+            <button onClick={()=>onDelete(task.id)} style={{...btnSm,border:"none",fontSize:"13px",padding:"0 2px",lineHeight:1}}>×</button>
+          </div>
+        )}
+        {/* mobile always-visible actions */}
+        <div className="touch-actions" style={{display:"flex",gap:"6px",flexShrink:0,paddingTop:"1px"}}>
+          {!task.date&&!task.done&&<button onClick={()=>setScheduling(s=>!s)} style={{...btnSm,padding:"4px 8px"}}>→</button>}
+          <button onClick={()=>onToggle(task.id)} style={{...btnSm,padding:"4px 8px",fontSize:"10px"}}>{task.done?"↺":"✓"}</button>
+          <button onClick={()=>onDelete(task.id)} style={{...btnSm,border:"none",fontSize:"16px",padding:"0 3px",lineHeight:1,color:p.inkGhost}}>×</button>
+        </div>
+      </div>
+      {scheduling&&(
+        <div style={{marginTop:"6px",display:"flex",gap:"6px",alignItems:"center"}}>
+          <input ref={dateRef} value={dateInput} onChange={e=>setDateInput(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter")commitSchedule();if(e.key==="Escape"){setScheduling(false);setDateInput("");}}}
+            placeholder="monday · today · 14/04"
+            style={{background:p.parchment2,border:`1px solid ${p.borderDim}`,color:p.ink,padding:"5px 8px",fontSize:"10px",outline:"none",fontFamily:"inherit",flex:1}}
+          />
+          <button onClick={commitSchedule} style={{...btnSm,padding:"5px 9px"}}>set</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NavDots({screen,setScreen}){
+  return(
+    <div style={{position:"fixed",bottom:"20px",left:0,right:0,display:"flex",justifyContent:"center",gap:"8px",zIndex:200,paddingBottom:"env(safe-area-inset-bottom)"}}>
+      {[0,1,2].map(i=>(
+        <div key={i} onClick={()=>setScreen(i)} style={{width:screen===i?"20px":"5px",height:"5px",borderRadius:"3px",background:screen===i?p.inkGhost:p.borderDim,cursor:"pointer",transition:"width 0.2s,background 0.2s"}}/>
+      ))}
+    </div>
+  );
+}
+
+function App(){
+  const [tasks,setTasks]=React.useState([]);
+  const [loaded,setLoaded]=React.useState(false);
+  const [screen,setScreen]=React.useState(1);
+  const [view,setView]=React.useState("week");
+  const [cursor,setCursor]=React.useState(getToday());
+  const [inputVal,setInputVal]=React.useState("");
+  const [prepDays,setPrepDays]=React.useState("");
+  const [hint,setHint]=React.useState("");
+  const inputRef=React.useRef(null);
+  const dragId=React.useRef(null);
+  const dragOverId=React.useRef(null);
+  const touchStartX=React.useRef(null);
+  const touchStartY=React.useRef(null);
+
+  function handleTouchStart(e){
+    touchStartX.current=e.touches[0].clientX;
+    touchStartY.current=e.touches[0].clientY;
+  }
+  function handleTouchEnd(e){
+    if(touchStartX.current===null)return;
+    const dx=e.changedTouches[0].clientX-touchStartX.current;
+    const dy=e.changedTouches[0].clientY-touchStartY.current;
+    if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>52){
+      if(dx<0)setScreen(s=>Math.min(s+1,2));
+      else     setScreen(s=>Math.max(s-1,0));
+    }
+    touchStartX.current=null;
+    touchStartY.current=null;
+  }
+
+  React.useEffect(()=>{
+    try{const saved=localStorage.getItem(STORAGE_KEY);if(saved){const parsed=JSON.parse(saved);setTasks(parsed.map(t=>({...t,date:t.date?new Date(t.date):null})));}}catch{}
+    setLoaded(true);
+  },[]);
+  React.useEffect(()=>{if(!loaded)return;try{localStorage.setItem(STORAGE_KEY,JSON.stringify(tasks));}catch{}},[tasks,loaded]);
+  React.useEffect(()=>{if(screen===1)setTimeout(()=>inputRef.current?.focus(),350);},[screen]);
+  React.useEffect(()=>{
+    if(!inputVal.trim()){setHint("");return;}
+    const{date,time,priority}=parseInput(inputVal);
+    const parts=[];
+    if(date)parts.push(sameDay(date,getToday())?"today":sameDay(date,addDays(getToday(),1))?"tomorrow":`${DAYS_SHORT[date.getDay()]} ${date.getDate()} ${MONTHS[date.getMonth()]}`);
+    if(time)parts.push(time);
+    if(priority==="urgent")parts.push("urgent");
+    if(!date)parts.push("→ backlog");
+    const pd=parseInt(prepDays);
+    if(pd>0&&date)parts.push(`+ ${pd} prep days`);
+    setHint(parts.join("  ·  "));
+  },[inputVal,prepDays]);
+
+  function submitTask(){
+    const raw=inputVal.trim();if(!raw)return;
+    const{text,date,time,priority}=parseInput(raw);if(!text)return;
+    const mainId=Date.now().toString();
+    const newTasks=[{id:mainId,text,date,time,priority,done:false,isPrep:false,order:Date.now()}];
+    const pd=parseInt(prepDays);
+    if(pd>0&&date){for(let i=1;i<=pd;i++){newTasks.push({id:`${mainId}-prep-${i}`,text:`prep: ${text}`,date:addDays(date,-i),time:"",priority:"normal",done:false,isPrep:true,prepForId:mainId,order:Date.now()+i});}}
+    setTasks(prev=>[...prev,...newTasks]);
+    setInputVal("");setPrepDays("");setHint("");
+    inputRef.current?.focus();
+  }
+
+  const toggleDone=(id)=>setTasks(prev=>prev.map(t=>t.id===id?{...t,done:!t.done}:t));
+  const deleteTask=(id)=>setTasks(prev=>prev.filter(t=>t.id!==id));
+  const scheduleTask=(id,date)=>setTasks(prev=>prev.map(t=>t.id===id?{...t,date}:t));
+  const moveToDay=(id,newDate)=>setTasks(prev=>prev.map(t=>t.id===id?{...t,date:new Date(newDate)}:t));
+  function tasksFor(d){return tasks.filter(t=>t.date&&sameDay(new Date(t.date),d)).sort((a,b)=>(a.order||0)-(b.order||0));}
+  function handleDragStart(id){dragId.current=id;}
+  function handleReorderDrop(dayTasks){
+    const fromId=dragId.current,toId=dragOverId.current;
+    if(!fromId||!toId||fromId===toId){dragId.current=null;dragOverId.current=null;return;}
+    const ids=dayTasks.map(t=>t.id);
+    const fromIdx=ids.indexOf(fromId),toIdx=ids.indexOf(toId);
+    if(fromIdx===-1||toIdx===-1){dragId.current=null;dragOverId.current=null;return;}
+    const reordered=[...ids];reordered.splice(fromIdx,1);reordered.splice(toIdx,0,fromId);
+    setTasks(prev=>prev.map(t=>{const rank=reordered.indexOf(t.id);if(rank===-1)return t;return{...t,order:rank};}));
+    dragId.current=null;dragOverId.current=null;
+  }
+
+  const backlog=tasks.filter(t=>!t.date&&!t.done);
+  const archived=tasks.filter(t=>t.done);
+  const pending=tasks.filter(t=>!t.done).length;
+  const done=tasks.filter(t=>t.done).length;
+
+  function navPrev(){if(view==="day")setCursor(c=>addDays(c,-1));else if(view==="week")setCursor(c=>addDays(c,-7));else setCursor(c=>new Date(c.getFullYear(),c.getMonth()-1,1));}
+  function navNext(){if(view==="day")setCursor(c=>addDays(c,1));else if(view==="week")setCursor(c=>addDays(c,7));else setCursor(c=>new Date(c.getFullYear(),c.getMonth()+1,1));}
+  function navLabel(){
+    if(view==="day")return `${DAYS_SHORT[cursor.getDay()]} ${cursor.getDate()} ${MONTHS[cursor.getMonth()]}`;
+    if(view==="week"){const wk=getWeekDays(cursor),s=wk[0],e=wk[6];if(s.getMonth()===e.getMonth())return `${s.getDate()}–${e.getDate()} ${MONTHS[s.getMonth()]} ${s.getFullYear()}`;return `${s.getDate()} ${MONTHS[s.getMonth()]} – ${e.getDate()} ${MONTHS[e.getMonth()]}`;}
+    return `${MONTHS[cursor.getMonth()]} ${cursor.getFullYear()}`;
+  }
+
+  // tap a month cell → jump to day view for that day
+  function goToDay(d){setCursor(new Date(d));setView("day");}
+
+  function DayView(){
+    const t=tasksFor(cursor),isT=sameDay(cursor,getToday()),n=t.filter(x=>!x.done).length,col=countColor(n);
+    const [dragOverLocal,setDragOverLocal]=React.useState(null);
+    return(
+      <div style={{padding:"24px",overflowY:"auto",flex:1,WebkitOverflowScrolling:"touch"}}>
+        <div style={{display:"flex",alignItems:"baseline",gap:"10px",marginBottom:"20px"}}>
+          <span style={{fontSize:"10px",color:isT?p.ink:p.inkDim,letterSpacing:"0.15em"}}>
+            {DAYS_SHORT[cursor.getDay()]} {cursor.getDate()} {MONTHS[cursor.getMonth()]}
+            {isT&&<span style={{color:p.inkGhost,marginLeft:"8px"}}>today</span>}
+          </span>
+          <span style={{fontSize:"11px",color:col,letterSpacing:"0.05em"}}>[{n}]</span>
+          {n>=10&&<span style={{fontSize:"9px",color:p.violet}}>consider moving some tasks</span>}
+        </div>
+        {t.length===0?<div style={{fontSize:"10px",color:p.inkFaint}}>—</div>:
+          <div style={{display:"flex",flexDirection:"column",gap:"6px",maxWidth:"480px"}}>
+            {t.map(task=>(
+              <TaskChip key={task.id} task={task} onToggle={toggleDone} onDelete={deleteTask} onSchedule={scheduleTask}
+                draggable={!task.done}
+                onDragStart={()=>handleDragStart(task.id)}
+                onDragOver={()=>{dragOverId.current=task.id;setDragOverLocal(task.id);}}
+                onDrop={()=>{handleReorderDrop(t);setDragOverLocal(null);}}
+                isDragOver={dragOverLocal===task.id}
+              />
+            ))}
+          </div>
+        }
+      </div>
+    );
+  }
+
+  function WeekView(){
+    const wk=getWeekDays(cursor);
+    return(
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",flex:1,overflowY:"auto",minHeight:0,WebkitOverflowScrolling:"touch"}}>
+        {wk.map((d,i)=>{
+          const t=tasksFor(d),isT=sameDay(d,getToday()),n=t.filter(x=>!x.done).length;
+          return(
+            <div key={i} style={{borderRight:i<6?`1px solid ${p.borderDim}`:"none",padding:"10px 6px"}}>
+              <div style={{fontSize:"8px",letterSpacing:"0.1em",color:isT?p.ink:p.inkDim,fontWeight:isT?"500":"400",marginBottom:"8px",display:"flex",alignItems:"baseline",gap:"3px",flexWrap:"wrap"}}>
+                <span>{DAYS_SHORT[d.getDay()]} {d.getDate()}</span>
+                {n>0&&<span style={{color:countColor(n)}}>[{n}]</span>}
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
+                {t.map(t=><TaskChip key={t.id} task={t} onToggle={toggleDone} onDelete={deleteTask} onSchedule={scheduleTask} compact/>)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function MonthView(){
+    const [dropTarget,setDropTarget]=React.useState(null);
+    const grid=getMonthGrid(cursor);
+    const weeks=[];
+    for(let i=0;i<grid.length;i+=7)weeks.push(grid.slice(i,i+7));
+    return(
+      <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
+        {/* day headers */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",borderBottom:`1px solid ${p.borderDim}`}}>
+          {DAYS_SHORT.map(d=>(
+            <div key={d} style={{padding:"6px 2px",fontSize:"8px",color:p.inkDim,letterSpacing:"0.05em",borderRight:`1px solid ${p.borderDim}`,textAlign:"center"}}>{d}</div>
+          ))}
+        </div>
+        {weeks.map((week,wi)=>(
+          <div key={wi} style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",borderBottom:`1px solid ${p.borderDim}`,minHeight:"72px"}}>
+            {week.map((d,di)=>{
+              if(!d)return <div key={di} style={{borderRight:di<6?`1px solid ${p.borderDim}`:"none",background:p.parchment2}}/>;
+              const t=tasksFor(d),isT=sameDay(d,getToday()),thisMonth=d.getMonth()===cursor.getMonth(),n=t.filter(x=>!x.done).length,isDropTarget=dropTarget===d.toDateString();
+              return(
+                <div key={di}
+                  onClick={()=>goToDay(d)}
+                  onDragOver={e=>{e.preventDefault();setDropTarget(d.toDateString());}}
+                  onDragLeave={()=>setDropTarget(null)}
+                  onDrop={e=>{e.preventDefault();if(dragId.current)moveToDay(dragId.current,d);dragId.current=null;setDropTarget(null);}}
+                  style={{
+                    borderRight:di<6?`1px solid ${p.borderDim}`:"none",
+                    padding:"5px 4px",
+                    background:isDropTarget?p.parchment3:thisMonth?p.parchment:p.parchment2,
+                    transition:"background 0.12s",
+                    cursor:"pointer",
+                    overflow:"hidden",
+                  }}
+                >
+                  {/* date number */}
+                  <div style={{fontSize:"9px",color:isT?p.ink:thisMonth?p.inkDim:p.inkFaint,marginBottom:"4px",display:"flex",alignItems:"center",gap:"3px"}}>
+                    {isT
+                      ?<span style={{background:p.ink,color:p.parchment,padding:"1px 3px",fontSize:"8px",borderRadius:"2px"}}>{d.getDate()}</span>
+                      :<span>{d.getDate()}</span>
+                    }
+                    {n>0&&<span style={{fontSize:"8px",color:countColor(n),letterSpacing:0}}>[{n}]</span>}
+                  </div>
+                  {/* task pills — single line, truncated */}
+                  <div style={{display:"flex",flexDirection:"column",gap:"2px",overflow:"hidden"}}>
+                    {t.slice(0,3).map(task=>(
+                      <TaskChip key={task.id} task={task}
+                        onToggle={toggleDone} onDelete={deleteTask} onSchedule={scheduleTask}
+                        compact draggable={!task.done}
+                        onDragStart={e=>{e.stopPropagation();dragId.current=task.id;}}
+                      />
+                    ))}
+                    {t.length>3&&(
+                      <div style={{fontSize:"8px",color:p.inkFaint,paddingLeft:"4px"}}>+{t.length-3}</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const screenStyle=(idx)=>({
+    position:"absolute",top:0,left:0,right:0,bottom:0,
+    display:"flex",flexDirection:"column",
+    background:idx===1?p.parchment2:p.parchment,
+    transform:`translateX(${(idx-screen)*100}%)`,
+    transition:"transform 0.3s cubic-bezier(0.4,0,0.2,1)",
+    overflow:"hidden",
+    willChange:"transform",
+  });
+  const labelStyle={fontSize:"9px",letterSpacing:"0.2em",color:p.inkDim,display:"block",marginBottom:"5px"};
+
+  return(
+    <div
+      style={{fontFamily:"'Azeret Mono','Courier New',monospace",background:p.parchment,color:p.ink,height:"100vh",position:"relative",overflow:"hidden",touchAction:"pan-y"}}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      <style>{`
+        @media (hover: none) { .hover-actions { display: none !important; } .touch-actions { display: flex !important; } }
+        @media (hover: hover) { .hover-actions { display: flex; } .touch-actions { display: none !important; } }
+        .touch-actions { display: none; }
+        .hover-actions { display: none; }
+      `}</style>
+
+      {/* BACKLOG */}
+      <div style={screenStyle(0)}>
+        <div style={{padding:"20px 22px 16px",paddingTop:"calc(20px + env(safe-area-inset-top))",borderBottom:`1px solid ${p.borderDim}`,display:"flex",alignItems:"baseline",justifyContent:"space-between"}}>
+          <span style={{fontSize:"9px",letterSpacing:"0.3em",color:p.inkDim}}>backlog</span>
+          <span style={{fontSize:"9px",color:p.inkFaint}}>{backlog.length} unscheduled</span>
+        </div>
+        <div style={{flex:1,overflowY:"auto",padding:"16px 20px 60px",WebkitOverflowScrolling:"touch"}}>
+          {backlog.length===0?<div style={{fontSize:"10px",color:p.inkFaint}}>nothing here yet</div>:
+            <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>{backlog.map(t=><TaskChip key={t.id} task={t} onToggle={toggleDone} onDelete={deleteTask} onSchedule={scheduleTask}/>)}</div>}
+          {archived.length>0&&(<>
+            <div style={{fontSize:"9px",color:p.inkFaint,letterSpacing:"0.2em",margin:"24px 0 10px",borderTop:`1px solid ${p.borderDim}`,paddingTop:"18px"}}>done</div>
+            <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>{archived.map(t=><TaskChip key={t.id} task={t} onToggle={toggleDone} onDelete={deleteTask} onSchedule={scheduleTask}/>)}</div>
+          </>)}
+        </div>
+      </div>
+
+      {/* INPUT */}
+      <div style={screenStyle(1)}>
+        <div style={{padding:"24px 0 0",paddingTop:"calc(24px + env(safe-area-inset-top))",textAlign:"center",fontSize:"9px",letterSpacing:"0.35em",color:p.inkFaint}}>quests</div>
+        <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 32px"}}>
+          <div style={{width:"100%",maxWidth:"520px"}}>
+            <div style={{border:`1.5px solid ${p.ink}`,borderRadius:"8px",padding:"13px 18px",marginBottom:"10px"}}>
+              <input ref={inputRef} value={inputVal} onChange={e=>setInputVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submitTask()}
+                placeholder="what are you gonna do today?"
+                style={{width:"100%",background:"transparent",border:"none",color:p.ink,fontSize:"14px",letterSpacing:"0.02em",fontFamily:"inherit"}}
+              />
+            </div>
+            <div style={{fontSize:"10px",color:p.inkGhost,letterSpacing:"0.06em",minHeight:"16px",opacity:hint?1:0,transition:"opacity 0.15s",paddingLeft:"2px",marginBottom:"18px"}}>{hint||"​"}</div>
+            <div style={{display:"flex",gap:"10px",marginBottom:"20px",alignItems:"flex-end"}}>
+              <div style={{flex:1}}>
+                <label style={labelStyle}>prep days <span style={{color:p.inkFaint}}>— optional</span></label>
+                <input type="number" min="0" value={prepDays} onChange={e=>setPrepDays(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submitTask()} placeholder="0"
+                  style={{width:"100%",background:"transparent",border:"none",borderBottom:`1px solid ${p.borderDim}`,color:p.ink,padding:"7px 0",fontSize:"11px",letterSpacing:"0.02em",fontFamily:"inherit"}}
+                  onFocus={e=>e.target.style.borderBottomColor=p.inkDim} onBlur={e=>e.target.style.borderBottomColor=p.borderDim}
+                />
+              </div>
+              <button onClick={submitTask}
+                style={{padding:"7px 18px",background:"transparent",border:`1px solid ${p.borderDim}`,color:p.inkDim,fontSize:"10px",letterSpacing:"0.15em",transition:"border-color 0.12s,color 0.12s"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=p.ink;e.currentTarget.style.color=p.ink;}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=p.borderDim;e.currentTarget.style.color=p.inkDim;}}
+              >add</button>
+            </div>
+            <div style={{fontSize:"9px",color:p.inkFaint,letterSpacing:"0.07em",lineHeight:2.3}}>
+              <div>no date  →  backlog</div>
+              <div>day name, today, tomorrow, or dd/mm  →  calendar</div>
+              <div>add a time like 14:30 or 9am</div>
+              <div>add "urgent" to flag it</div>
+              <div>prep days  →  fills prior days with prep: task</div>
+            </div>
+          </div>
+        </div>
+        <div style={{padding:"0 0 32px",paddingBottom:"calc(32px + env(safe-area-inset-bottom))",display:"flex",flexDirection:"column",alignItems:"center",gap:"10px"}}>
+          <div style={{width:"100px",height:"1px",background:p.borderDim,position:"relative"}}>
+            <div style={{position:"absolute",top:0,left:0,height:"1px",background:p.inkGhost,width:(pending+done)===0?"0%":`${Math.round((done/(pending+done))*100)}%`,transition:"width 0.4s"}}/>
+          </div>
+          <div style={{fontSize:"9px",color:p.inkFaint,letterSpacing:"0.12em",display:"flex",gap:"14px"}}>
+            <span><span style={{color:p.inkDim}}>{pending}</span> to do</span>
+            <span style={{color:p.borderDim}}>·</span>
+            <span><span style={{color:p.inkDim}}>{done}</span> done</span>
+          </div>
+        </div>
+      </div>
+
+      {/* CALENDAR */}
+      <div style={screenStyle(2)}>
+        <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"12px 18px",paddingTop:"calc(12px + env(safe-area-inset-top))",borderBottom:`1px solid ${p.borderDim}`,flexShrink:0}}>
+          <button onClick={navPrev} style={{background:"transparent",border:"none",color:p.inkGhost,fontSize:"18px",lineHeight:1,padding:"2px 6px",transition:"color 0.12s"}} onMouseEnter={e=>e.currentTarget.style.color=p.ink} onMouseLeave={e=>e.currentTarget.style.color=p.inkGhost}>‹</button>
+          <button onClick={navNext} style={{background:"transparent",border:"none",color:p.inkGhost,fontSize:"18px",lineHeight:1,padding:"2px 6px",transition:"color 0.12s"}} onMouseEnter={e=>e.currentTarget.style.color=p.ink} onMouseLeave={e=>e.currentTarget.style.color=p.inkGhost}>›</button>
+          <span style={{fontSize:"10px",color:p.ink,letterSpacing:"0.07em",flex:1}}>{navLabel()}</span>
+          <div style={{display:"flex"}}>
+            {["day","week","month"].map(v=>(
+              <button key={v} onClick={()=>setView(v)} style={{background:"transparent",border:"none",color:view===v?p.ink:p.inkGhost,padding:"4px 10px",fontSize:"9px",letterSpacing:"0.12em",transition:"color 0.1s",borderBottom:view===v?`1px solid ${p.inkGhost}`:"1px solid transparent"}}>{v}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:0,paddingBottom:"calc(48px + env(safe-area-inset-bottom))"}}>
+          {view==="day"&&<DayView/>}
+          {view==="week"&&<WeekView/>}
+          {view==="month"&&<MonthView/>}
+        </div>
+      </div>
+
+      <NavDots screen={screen} setScreen={setScreen}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
