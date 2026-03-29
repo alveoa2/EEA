@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
-  <meta name="apple-mobile-web-app-title" content="plan"/>
-  <title>plan</title>
+  <meta name="apple-mobile-web-app-title" content="quests"/>
+  <title>quests</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -15,25 +15,26 @@
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     html,body,#root{height:100%;overflow:hidden;}
-    input::placeholder{color:#cfc8b8;}
+    input::placeholder{color:#ccc4b4;}
     input:focus,textarea:focus{outline:none;}
     ::-webkit-scrollbar{width:3px;height:3px;}
-    ::-webkit-scrollbar-thumb{background:#e0d8c8;}
+    ::-webkit-scrollbar-thumb{background:#ddd6c8;}
     button{font-family:'Azeret Mono','Courier New',monospace;cursor:pointer;}
-    body{font-family:'Azeret Mono','Courier New',monospace;background:#f5efe3;color:#1e1a14;}
+    body{font-family:'Azeret Mono','Courier New',monospace;background:#faf7f2;color:#1e1a14;}
   </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const STORAGE_KEY = "planner-v6";
+const STORAGE_KEY = "planner-v7";
 const p = {
-  parchment:"#f5efe3", parchment2:"#ede7d9", parchment3:"#e4dccb",
-  ink:"#1e1a14", inkDim:"#7a7060", inkGhost:"#b8ae9e", inkFaint:"#cfc8b8",
-  border:"#d4c9b4", borderDim:"#e0d8c8",
-  urgent:"#8b3a2a", urgentBg:"#f0e8e0", done:"#a09888",
+  parchment:"#faf7f2", parchment2:"#f2ede4", parchment3:"#e8e0d4",
+  ink:"#1e1a14", inkDim:"#7a7060", inkGhost:"#b8ae9e", inkFaint:"#ccc4b4",
+  border:"#ddd6c4", borderDim:"#e8e2d8",
+  urgent:"#8b3a2a", urgentBg:"#f5ede8", done:"#a09888",
   orange:"#c47a2a", red:"#a02a2a", violet:"#6b3a8b",
 };
+
 const DAYS_SHORT=["sun","mon","tue","wed","thu","fri","sat"];
 const DAYS_FULL=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
 const MONTHS=["january","february","march","april","may","june","july","august","september","october","november","december"];
@@ -134,6 +135,11 @@ function TaskChip({task,onToggle,onDelete,onSchedule,compact=false,draggable=fal
             <button onClick={()=>onDelete(task.id)} style={{...btnSm,border:"none",fontSize:"13px",padding:"0 2px",lineHeight:1}}>×</button>
           </div>
         )}
+        {/* mobile tap controls always visible on touch devices */}
+        <div className="touch-actions" style={{display:"none",gap:"6px",flexShrink:0,paddingTop:"1px"}}>
+          <button onClick={()=>onToggle(task.id)} style={{...btnSm,padding:"4px 8px",fontSize:"10px"}}>{task.done?"↺":"✓"}</button>
+          <button onClick={()=>onDelete(task.id)} style={{...btnSm,border:"none",fontSize:"15px",padding:"0 3px",lineHeight:1,color:p.inkGhost}}>×</button>
+        </div>
       </div>
       {scheduling&&(
         <div style={{marginTop:"6px",display:"flex",gap:"6px",alignItems:"center"}}>
@@ -151,9 +157,9 @@ function TaskChip({task,onToggle,onDelete,onSchedule,compact=false,draggable=fal
 
 function NavDots({screen,setScreen}){
   return(
-    <div style={{position:"fixed",bottom:"20px",left:0,right:0,display:"flex",justifyContent:"center",gap:"8px",zIndex:200}}>
+    <div style={{position:"fixed",bottom:"20px",left:0,right:0,display:"flex",justifyContent:"center",gap:"8px",zIndex:200,paddingBottom:"env(safe-area-inset-bottom)"}}>
       {[0,1,2].map(i=>(
-        <div key={i} onClick={()=>setScreen(i)} style={{width:screen===i?"20px":"5px",height:"4px",borderRadius:"2px",background:screen===i?p.inkGhost:p.borderDim,cursor:"pointer",transition:"width 0.2s,background 0.2s"}}/>
+        <div key={i} onClick={()=>setScreen(i)} style={{width:screen===i?"20px":"5px",height:"5px",borderRadius:"3px",background:screen===i?p.inkGhost:p.borderDim,cursor:"pointer",transition:"width 0.2s,background 0.2s"}}/>
       ))}
     </div>
   );
@@ -172,6 +178,27 @@ function App(){
   const dragId=React.useRef(null);
   const dragOverId=React.useRef(null);
 
+  // touch swipe
+  const touchStartX=React.useRef(null);
+  const touchStartY=React.useRef(null);
+
+  function handleTouchStart(e){
+    touchStartX.current=e.touches[0].clientX;
+    touchStartY.current=e.touches[0].clientY;
+  }
+  function handleTouchEnd(e){
+    if(touchStartX.current===null) return;
+    const dx=e.changedTouches[0].clientX - touchStartX.current;
+    const dy=e.changedTouches[0].clientY - touchStartY.current;
+    // only trigger if horizontal movement is dominant and substantial
+    if(Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 48){
+      if(dx < 0) setScreen(s=>Math.min(s+1,2)); // swipe left → next
+      else        setScreen(s=>Math.max(s-1,0)); // swipe right → prev
+    }
+    touchStartX.current=null;
+    touchStartY.current=null;
+  }
+
   React.useEffect(()=>{
     try{
       const saved=localStorage.getItem(STORAGE_KEY);
@@ -180,7 +207,7 @@ function App(){
     setLoaded(true);
   },[]);
   React.useEffect(()=>{if(!loaded)return;try{localStorage.setItem(STORAGE_KEY,JSON.stringify(tasks));}catch{}},[tasks,loaded]);
-  React.useEffect(()=>{if(screen===1)setTimeout(()=>inputRef.current?.focus(),300);},[screen]);
+  React.useEffect(()=>{if(screen===1)setTimeout(()=>inputRef.current?.focus(),350);},[screen]);
   React.useEffect(()=>{
     if(!inputVal.trim()){setHint("");return;}
     const{date,time,priority}=parseInput(inputVal);
@@ -214,9 +241,7 @@ function App(){
   const deleteTask=(id)=>setTasks(prev=>prev.filter(t=>t.id!==id));
   const scheduleTask=(id,date)=>setTasks(prev=>prev.map(t=>t.id===id?{...t,date}:t));
   const moveToDay=(id,newDate)=>setTasks(prev=>prev.map(t=>t.id===id?{...t,date:new Date(newDate)}:t));
-
   function tasksFor(d){return tasks.filter(t=>t.date&&sameDay(new Date(t.date),d)).sort((a,b)=>(a.order||0)-(b.order||0));}
-
   function handleDragStart(id){dragId.current=id;}
   function handleReorderDrop(dayTasks){
     const fromId=dragId.current,toId=dragOverId.current;
@@ -237,7 +262,7 @@ function App(){
   function navPrev(){if(view==="day")setCursor(c=>addDays(c,-1));else if(view==="week")setCursor(c=>addDays(c,-7));else setCursor(c=>new Date(c.getFullYear(),c.getMonth()-1,1));}
   function navNext(){if(view==="day")setCursor(c=>addDays(c,1));else if(view==="week")setCursor(c=>addDays(c,7));else setCursor(c=>new Date(c.getFullYear(),c.getMonth()+1,1));}
   function navLabel(){
-    if(view==="day"){const isT=sameDay(cursor,getToday());return `${DAYS_SHORT[cursor.getDay()]} ${cursor.getDate()} ${MONTHS[cursor.getMonth()]}${isT?"  ·  today":""}`;}
+    if(view==="day"){return `${DAYS_SHORT[cursor.getDay()]} ${cursor.getDate()} ${MONTHS[cursor.getMonth()]}`;}
     if(view==="week"){const wk=getWeekDays(cursor),s=wk[0],e=wk[6];if(s.getMonth()===e.getMonth())return `${s.getDate()}–${e.getDate()} ${MONTHS[s.getMonth()]} ${s.getFullYear()}`;return `${s.getDate()} ${MONTHS[s.getMonth()]} – ${e.getDate()} ${MONTHS[e.getMonth()]}`;}
     return `${MONTHS[cursor.getMonth()]} ${cursor.getFullYear()}`;
   }
@@ -246,11 +271,14 @@ function App(){
     const t=tasksFor(cursor),isT=sameDay(cursor,getToday()),n=t.filter(x=>!x.done).length,col=countColor(n);
     const [dragOverLocal,setDragOverLocal]=React.useState(null);
     return(
-      <div style={{padding:"28px 32px",overflowY:"auto",flex:1}}>
-        <div style={{display:"flex",alignItems:"baseline",gap:"10px",marginBottom:"22px"}}>
-          <span style={{fontSize:"10px",color:isT?p.ink:p.inkDim,letterSpacing:"0.15em"}}>{DAYS_SHORT[cursor.getDay()]} {cursor.getDate()} {MONTHS[cursor.getMonth()]}{isT&&<span style={{color:p.inkGhost,marginLeft:"10px"}}>today</span>}</span>
+      <div style={{padding:"24px 24px",overflowY:"auto",flex:1,WebkitOverflowScrolling:"touch"}}>
+        <div style={{display:"flex",alignItems:"baseline",gap:"10px",marginBottom:"20px"}}>
+          <span style={{fontSize:"10px",color:isT?p.ink:p.inkDim,letterSpacing:"0.15em"}}>
+            {DAYS_SHORT[cursor.getDay()]} {cursor.getDate()} {MONTHS[cursor.getMonth()]}
+            {isT&&<span style={{color:p.inkGhost,marginLeft:"8px"}}>today</span>}
+          </span>
           <span style={{fontSize:"11px",color:col,letterSpacing:"0.05em"}}>[{n}]</span>
-          {n>=10&&<span style={{fontSize:"9px",color:p.violet,letterSpacing:"0.06em"}}>consider moving some tasks</span>}
+          {n>=10&&<span style={{fontSize:"9px",color:p.violet}}>consider moving some tasks</span>}
         </div>
         {t.length===0?<div style={{fontSize:"10px",color:p.inkFaint}}>—</div>:
           <div style={{display:"flex",flexDirection:"column",gap:"5px",maxWidth:"480px"}}>
@@ -272,12 +300,12 @@ function App(){
   function WeekView(){
     const wk=getWeekDays(cursor);
     return(
-      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",flex:1,overflowY:"auto",minHeight:0}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",flex:1,overflowY:"auto",minHeight:0,WebkitOverflowScrolling:"touch"}}>
         {wk.map((d,i)=>{
           const t=tasksFor(d),isT=sameDay(d,getToday()),n=t.filter(x=>!x.done).length;
           return(
-            <div key={i} style={{borderRight:i<6?`1px solid ${p.borderDim}`:"none",padding:"12px 10px"}}>
-              <div style={{fontSize:"9px",letterSpacing:"0.15em",color:isT?p.ink:p.inkDim,fontWeight:isT?"500":"400",marginBottom:"10px",display:"flex",alignItems:"baseline",gap:"5px"}}>
+            <div key={i} style={{borderRight:i<6?`1px solid ${p.borderDim}`:"none",padding:"12px 8px"}}>
+              <div style={{fontSize:"9px",letterSpacing:"0.12em",color:isT?p.ink:p.inkDim,fontWeight:isT?"500":"400",marginBottom:"10px",display:"flex",alignItems:"baseline",gap:"4px"}}>
                 <span>{DAYS_SHORT[d.getDay()]} <span style={{color:isT?p.inkDim:p.inkFaint}}>{d.getDate()}</span></span>
                 {n>0&&<span style={{fontSize:"9px",color:countColor(n)}}>[{n}]</span>}
               </div>
@@ -297,12 +325,12 @@ function App(){
     const weeks=[];
     for(let i=0;i<grid.length;i+=7)weeks.push(grid.slice(i,i+7));
     return(
-      <div style={{flex:1,overflowY:"auto"}}>
+      <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",borderBottom:`1px solid ${p.borderDim}`}}>
-          {DAYS_SHORT.map(d=><div key={d} style={{padding:"8px 10px",fontSize:"9px",color:p.inkDim,letterSpacing:"0.18em",borderRight:`1px solid ${p.borderDim}`}}>{d}</div>)}
+          {DAYS_SHORT.map(d=><div key={d} style={{padding:"6px 4px",fontSize:"8px",color:p.inkDim,letterSpacing:"0.1em",borderRight:`1px solid ${p.borderDim}`,textAlign:"center"}}>{d}</div>)}
         </div>
         {weeks.map((week,wi)=>(
-          <div key={wi} style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",borderBottom:`1px solid ${p.borderDim}`,minHeight:"88px"}}>
+          <div key={wi} style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",borderBottom:`1px solid ${p.borderDim}`,minHeight:"80px"}}>
             {week.map((d,di)=>{
               if(!d)return <div key={di} style={{borderRight:di<6?`1px solid ${p.borderDim}`:"none",background:p.parchment2}}/>;
               const t=tasksFor(d),isT=sameDay(d,getToday()),thisMonth=d.getMonth()===cursor.getMonth(),n=t.filter(x=>!x.done).length,isDropTarget=dropTarget===d.toDateString();
@@ -311,10 +339,10 @@ function App(){
                   onDragOver={e=>{e.preventDefault();setDropTarget(d.toDateString());}}
                   onDragLeave={()=>setDropTarget(null)}
                   onDrop={e=>{e.preventDefault();if(dragId.current&&d)moveToDay(dragId.current,d);dragId.current=null;setDropTarget(null);}}
-                  style={{borderRight:di<6?`1px solid ${p.borderDim}`:"none",padding:"7px 8px",background:isDropTarget?p.parchment3:thisMonth?p.parchment:p.parchment2,transition:"background 0.12s"}}
+                  style={{borderRight:di<6?`1px solid ${p.borderDim}`:"none",padding:"6px 5px",background:isDropTarget?p.parchment3:thisMonth?p.parchment:p.parchment2,transition:"background 0.12s"}}
                 >
-                  <div style={{fontSize:"9px",color:isT?p.ink:thisMonth?p.inkDim:p.inkFaint,marginBottom:"5px",display:"flex",alignItems:"center",gap:"4px"}}>
-                    {isT?<span style={{background:p.ink,color:p.parchment,padding:"1px 4px",fontSize:"9px"}}>{d.getDate()}</span>:d.getDate()}
+                  <div style={{fontSize:"9px",color:isT?p.ink:thisMonth?p.inkDim:p.inkFaint,marginBottom:"4px",display:"flex",alignItems:"center",gap:"3px"}}>
+                    {isT?<span style={{background:p.ink,color:p.parchment,padding:"1px 3px",fontSize:"9px"}}>{d.getDate()}</span>:d.getDate()}
                     {n>0&&<span style={{fontSize:"8px",color:countColor(n)}}>[{n}]</span>}
                   </div>
                   <div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
@@ -334,23 +362,40 @@ function App(){
     );
   }
 
-  const screenStyle=(idx)=>({position:"absolute",top:0,left:0,right:0,bottom:0,display:"flex",flexDirection:"column",background:idx===1?p.parchment2:p.parchment,transform:`translateX(${(idx-screen)*100}%)`,transition:"transform 0.32s cubic-bezier(0.4,0,0.2,1)",overflow:"hidden"});
+  const screenStyle=(idx)=>({
+    position:"absolute",top:0,left:0,right:0,bottom:0,
+    display:"flex",flexDirection:"column",
+    background:idx===1?p.parchment2:p.parchment,
+    transform:`translateX(${(idx-screen)*100}%)`,
+    transition:"transform 0.3s cubic-bezier(0.4,0,0.2,1)",
+    overflow:"hidden",
+    willChange:"transform",
+  });
+
   const labelStyle={fontSize:"9px",letterSpacing:"0.2em",color:p.inkDim,display:"block",marginBottom:"5px"};
 
   return(
-    <div style={{fontFamily:"'Azeret Mono','Courier New',monospace",background:p.parchment,color:p.ink,height:"100vh",position:"relative",overflow:"hidden"}}>
+    <div
+      style={{fontFamily:"'Azeret Mono','Courier New',monospace",background:p.parchment,color:p.ink,height:"100vh",position:"relative",overflow:"hidden",touchAction:"pan-y"}}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      <style>{`
+        @media (hover: none) { .touch-actions { display: flex !important; } }
+        @media (hover: hover) { .touch-actions { display: none !important; } }
+      `}</style>
 
       {/* BACKLOG */}
       <div style={screenStyle(0)}>
-        <div style={{padding:"24px 26px 18px",borderBottom:`1px solid ${p.borderDim}`,display:"flex",alignItems:"baseline",justifyContent:"space-between"}}>
+        <div style={{padding:"20px 22px 16px",paddingTop:"calc(20px + env(safe-area-inset-top))",borderBottom:`1px solid ${p.borderDim}`,display:"flex",alignItems:"baseline",justifyContent:"space-between"}}>
           <span style={{fontSize:"9px",letterSpacing:"0.3em",color:p.inkDim}}>backlog</span>
           <span style={{fontSize:"9px",color:p.inkFaint}}>{backlog.length} unscheduled</span>
         </div>
-        <div style={{flex:1,overflowY:"auto",padding:"18px 22px 60px"}}>
+        <div style={{flex:1,overflowY:"auto",padding:"16px 20px 60px",WebkitOverflowScrolling:"touch"}}>
           {backlog.length===0?<div style={{fontSize:"10px",color:p.inkFaint}}>nothing here yet</div>:
             <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>{backlog.map(t=><TaskChip key={t.id} task={t} onToggle={toggleDone} onDelete={deleteTask} onSchedule={scheduleTask}/>)}</div>}
           {archived.length>0&&(<>
-            <div style={{fontSize:"9px",color:p.inkFaint,letterSpacing:"0.2em",margin:"28px 0 12px",borderTop:`1px solid ${p.borderDim}`,paddingTop:"20px"}}>done</div>
+            <div style={{fontSize:"9px",color:p.inkFaint,letterSpacing:"0.2em",margin:"24px 0 10px",borderTop:`1px solid ${p.borderDim}`,paddingTop:"18px"}}>done</div>
             <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>{archived.map(t=><TaskChip key={t.id} task={t} onToggle={toggleDone} onDelete={deleteTask} onSchedule={scheduleTask}/>)}</div>
           </>)}
         </div>
@@ -358,8 +403,8 @@ function App(){
 
       {/* INPUT */}
       <div style={screenStyle(1)}>
-        <div style={{padding:"28px 0 0",textAlign:"center",fontSize:"9px",letterSpacing:"0.3em",color:p.inkFaint}}>plan</div>
-        <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 40px"}}>
+        <div style={{padding:"24px 0 0",paddingTop:"calc(24px + env(safe-area-inset-top))",textAlign:"center",fontSize:"9px",letterSpacing:"0.35em",color:p.inkFaint}}>quests</div>
+        <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 32px"}}>
           <div style={{width:"100%",maxWidth:"520px"}}>
             <div style={{border:`1.5px solid ${p.ink}`,borderRadius:"8px",padding:"13px 18px",marginBottom:"10px"}}>
               <input ref={inputRef} value={inputVal} onChange={e=>setInputVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submitTask()}
@@ -391,7 +436,7 @@ function App(){
             </div>
           </div>
         </div>
-        <div style={{padding:"0 0 32px",display:"flex",flexDirection:"column",alignItems:"center",gap:"10px"}}>
+        <div style={{padding:"0 0 32px",paddingBottom:"calc(32px + env(safe-area-inset-bottom))",display:"flex",flexDirection:"column",alignItems:"center",gap:"10px"}}>
           <div style={{width:"100px",height:"1px",background:p.borderDim,position:"relative"}}>
             <div style={{position:"absolute",top:0,left:0,height:"1px",background:p.inkGhost,width:(pending+done)===0?"0%":`${Math.round((done/(pending+done))*100)}%`,transition:"width 0.4s"}}/>
           </div>
@@ -405,18 +450,17 @@ function App(){
 
       {/* CALENDAR */}
       <div style={screenStyle(2)}>
-        <div style={{display:"flex",alignItems:"center",gap:"10px",padding:"13px 22px",borderBottom:`1px solid ${p.borderDim}`,flexShrink:0}}>
-          <button onClick={navPrev} style={{background:"transparent",border:"none",color:p.inkGhost,fontSize:"16px",lineHeight:1,padding:"2px 4px",transition:"color 0.12s"}} onMouseEnter={e=>e.currentTarget.style.color=p.ink} onMouseLeave={e=>e.currentTarget.style.color=p.inkGhost}>‹</button>
-          <button onClick={navNext} style={{background:"transparent",border:"none",color:p.inkGhost,fontSize:"16px",lineHeight:1,padding:"2px 4px",transition:"color 0.12s"}} onMouseEnter={e=>e.currentTarget.style.color=p.ink} onMouseLeave={e=>e.currentTarget.style.color=p.inkGhost}>›</button>
-          <span style={{fontSize:"11px",color:p.ink,letterSpacing:"0.07em",flex:1}}>{navLabel()}</span>
-          <button onClick={()=>setCursor(getToday())} style={{background:"transparent",border:"none",color:p.inkGhost,fontSize:"9px",letterSpacing:"0.15em",padding:"4px 8px",transition:"color 0.12s"}} onMouseEnter={e=>e.currentTarget.style.color=p.ink} onMouseLeave={e=>e.currentTarget.style.color=p.inkGhost}>today</button>
-          <div style={{display:"flex",gap:"1px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"12px 18px",paddingTop:"calc(12px + env(safe-area-inset-top))",borderBottom:`1px solid ${p.borderDim}`,flexShrink:0}}>
+          <button onClick={navPrev} style={{background:"transparent",border:"none",color:p.inkGhost,fontSize:"18px",lineHeight:1,padding:"2px 6px",transition:"color 0.12s"}} onMouseEnter={e=>e.currentTarget.style.color=p.ink} onMouseLeave={e=>e.currentTarget.style.color=p.inkGhost}>‹</button>
+          <button onClick={navNext} style={{background:"transparent",border:"none",color:p.inkGhost,fontSize:"18px",lineHeight:1,padding:"2px 6px",transition:"color 0.12s"}} onMouseEnter={e=>e.currentTarget.style.color=p.ink} onMouseLeave={e=>e.currentTarget.style.color=p.inkGhost}>›</button>
+          <span style={{fontSize:"10px",color:p.ink,letterSpacing:"0.07em",flex:1}}>{navLabel()}</span>
+          <div style={{display:"flex",gap:"0px"}}>
             {["day","week","month"].map(v=>(
               <button key={v} onClick={()=>setView(v)} style={{background:"transparent",border:"none",color:view===v?p.ink:p.inkGhost,padding:"4px 10px",fontSize:"9px",letterSpacing:"0.12em",transition:"color 0.1s",borderBottom:view===v?`1px solid ${p.inkGhost}`:"1px solid transparent"}}>{v}</button>
             ))}
           </div>
         </div>
-        <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:0,paddingBottom:"48px"}}>
+        <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:0,paddingBottom:"calc(48px + env(safe-area-inset-bottom))"}}>
           {view==="day"&&<DayView/>}
           {view==="week"&&<WeekView/>}
           {view==="month"&&<MonthView/>}
